@@ -12,7 +12,7 @@ from PIL import Image
 MAX_SEED = np.iinfo(np.int32).max
 MAX_IMAGE_SIZE = 1344
 MODEL_PATH = '/content/StableUI_base/model_link.safetensors'
-LORA_PATH = '/content/StableUI_base/lora_model.safetensors'  
+LORA_PATH = '/content/StableUI_base/lora_model.safetensors'
 
 # Download model
 def download_model():
@@ -37,11 +37,10 @@ print("\033[1;32mModel loaded!\033[0m")
 
 # Create a placeholder image
 def create_placeholder_image():
-    img = Image.new('RGB', (512, 512), color = (73, 109, 137))
-    return img
+    return Image.new('RGB', (512, 512), color=(73, 109, 137))
 
 # Load and apply LoRA
-def apply_lora(use_lora, lora_scale):
+def apply_lora(pipe, use_lora, lora_scale):
     if not use_lora:
         return "LoRA not applied"
     
@@ -51,15 +50,18 @@ def apply_lora(use_lora, lora_scale):
         if 'lora_up' in key:
             up_key = key
             down_key = key.replace('lora_up', 'lora_down')
+            module_name = '.'.join(key.split('.')[:2])
             
             up_weight = lora_state_dict[up_key]
             down_weight = lora_state_dict[down_key]
             
-            original_weight = pipe.state_dict()[key.split('.')[0]]
-            
-            fused_weight = original_weight + lora_scale * (up_weight @ down_weight)
-            
-            pipe.state_dict()[key.split('.')[0]].copy_(fused_weight)
+            if hasattr(pipe, module_name):
+                module = getattr(pipe, module_name)
+                original_weight = getattr(module, key.split('.')[-1])
+                
+                fused_weight = original_weight + lora_scale * (up_weight @ down_weight)
+                
+                setattr(module, key.split('.')[-1], torch.nn.Parameter(fused_weight))
     
     return f"LoRA applied with scale: {lora_scale}"
 
@@ -69,7 +71,7 @@ def infer(prompt, seed, width, height, guidance_scale, num_inference_steps, use_
         seed = random.randint(0, MAX_SEED)
     generator = torch.Generator(device=device).manual_seed(seed)
     
-    lora_message = apply_lora(use_lora, lora_scale)
+    lora_message = apply_lora(pipe, use_lora, lora_scale)
     
     progress(0, desc="Generating image")
     image = pipe(
