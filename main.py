@@ -9,11 +9,11 @@ from diffusers import StableDiffusionXLPipeline
 # Constants
 MAX_SEED = np.iinfo(np.int32).max
 MAX_IMAGE_SIZE = 1344
-MODEL_PATH = '/content/StableUI/model_link.safetensors'
+MODEL_PATH = '/content/StableUI_base/model_link.safetensors'
 
 # Download model
 def download_model():
-    os.makedirs("/content/StableUI", exist_ok=True)
+    os.makedirs("/content/StableUI_base", exist_ok=True)
     subprocess.run([
         "wget", "-O", MODEL_PATH,
         "https://civitai.com/api/download/models/128078?type=Model&format=SafeTensor&size=pruned&fp=fp16"
