@@ -5,16 +5,18 @@ import numpy as np
 import random
 import gradio as gr
 from diffusers import StableDiffusionXLPipeline
+from safetensors.torch import load_file
 from PIL import Image
 
 # Constants
 MAX_SEED = np.iinfo(np.int32).max
 MAX_IMAGE_SIZE = 1344
-MODEL_PATH = '/content/StableUI/model_link.safetensors'
+MODEL_PATH = '/content/StableUI_base/model_link.safetensors'
+LORA_PATH = '/content/StableUI_base/lora_model.safetensors'  
 
 # Download model
 def download_model():
-    os.makedirs("/content/StableUI", exist_ok=True)
+    os.makedirs("/content/StableUI_base", exist_ok=True)
     subprocess.run([
         "wget", "-O", MODEL_PATH,
         "https://civitai.com/api/download/models/128078?type=Model&format=SafeTensor&size=pruned&fp=fp16"
@@ -31,18 +33,43 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 download_model()
 pipe = StableDiffusionXLPipeline.from_single_file(MODEL_PATH, use_safetensors=True, torch_dtype=torch.float16).to(device)
 clear_console()
-print("\033[1;32mDone!\033[0m")
+print("\033[1;32mModel loaded!\033[0m")
 
 # Create a placeholder image
 def create_placeholder_image():
     img = Image.new('RGB', (512, 512), color = (73, 109, 137))
     return img
 
+# Load and apply LoRA
+def apply_lora(use_lora, lora_scale):
+    if not use_lora:
+        return "LoRA not applied"
+    
+    lora_state_dict = load_file(LORA_PATH)
+    
+    for key in lora_state_dict:
+        if 'lora_up' in key:
+            up_key = key
+            down_key = key.replace('lora_up', 'lora_down')
+            
+            up_weight = lora_state_dict[up_key]
+            down_weight = lora_state_dict[down_key]
+            
+            original_weight = pipe.state_dict()[key.split('.')[0]]
+            
+            fused_weight = original_weight + lora_scale * (up_weight @ down_weight)
+            
+            pipe.state_dict()[key.split('.')[0]].copy_(fused_weight)
+    
+    return f"LoRA applied with scale: {lora_scale}"
+
 # Inference function
-def infer(prompt, seed, width, height, guidance_scale, num_inference_steps, progress=gr.Progress(track_tqdm=True)):
+def infer(prompt, seed, width, height, guidance_scale, num_inference_steps, use_lora, lora_scale, progress=gr.Progress(track_tqdm=True)):
     if seed == -1:  # -1 indicates random seed
         seed = random.randint(0, MAX_SEED)
     generator = torch.Generator(device=device).manual_seed(seed)
+    
+    lora_message = apply_lora(use_lora, lora_scale)
     
     progress(0, desc="Generating image")
     image = pipe(
@@ -55,7 +82,7 @@ def infer(prompt, seed, width, height, guidance_scale, num_inference_steps, prog
     ).images[0]
     
     progress(1, desc="Done")
-    return image, seed  # Return both the image and the used seed
+    return image, seed, lora_message
 
 # UI setup
 css = """
@@ -94,7 +121,7 @@ with gr.Blocks(css=css, theme='ParityError/Interstellar') as app:
                                  placeholder="Enter your prompt", container=False, scale=4)
                 run_button = gr.Button("🚀 Run", scale=1, variant='primary')
         
-        result = gr.Image(label="Result", show_label=False)
+        result = gr.Image(label="Result", show_label=False, value=create_placeholder_image())
         
         with gr.Group():
             with gr.Accordion("⚙️ Settings", open=False):
@@ -108,14 +135,19 @@ with gr.Blocks(css=css, theme='ParityError/Interstellar') as app:
                     guidance_scale = gr.Slider(label="Guidance scale", minimum=0.0, maximum=10.0, step=0.1, value=5.0)
                     num_inference_steps = gr.Slider(label="Steps", minimum=1, maximum=50, step=1, value=20)
 
+        with gr.Accordion("🧬 LoRA Settings", open=False):
+            use_lora = gr.Checkbox(label="Use LoRA", value=False)
+            lora_scale = gr.Slider(label="LoRA Scale", minimum=0.0, maximum=1.0, step=0.01, value=0.5)
+
         seed_used = gr.Number(label="Seed used", interactive=False)
+        lora_message = gr.Text(label="LoRA Status", interactive=False)
 
         gr.Examples(examples=examples, inputs=[prompt])
     
     run_button.click(
         fn=infer,
-        inputs=[prompt, seed, width, height, guidance_scale, num_inference_steps],
-        outputs=[result, seed_used],
+        inputs=[prompt, seed, width, height, guidance_scale, num_inference_steps, use_lora, lora_scale],
+        outputs=[result, seed_used, lora_message],
         show_progress=True
     )
 
