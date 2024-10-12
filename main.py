@@ -1,19 +1,20 @@
 import os
 import subprocess
-import random
 import torch
 import numpy as np
+import random
 import gradio as gr
 from diffusers import StableDiffusionXLPipeline
+from PIL import Image
 
 # Constants
 MAX_SEED = np.iinfo(np.int32).max
 MAX_IMAGE_SIZE = 1344
-MODEL_PATH = '/content/StableUI_base/model_link.safetensors'
+MODEL_PATH = '/content/StableUI/model_link.safetensors'
 
 # Download model
 def download_model():
-    os.makedirs("/content/StableUI_base", exist_ok=True)
+    os.makedirs("/content/StableUI", exist_ok=True)
     subprocess.run([
         "wget", "-O", MODEL_PATH,
         "https://civitai.com/api/download/models/128078?type=Model&format=SafeTensor&size=pruned&fp=fp16"
@@ -32,12 +33,15 @@ pipe = StableDiffusionXLPipeline.from_single_file(MODEL_PATH, use_safetensors=Tr
 clear_console()
 print("\033[1;32mDone!\033[0m")
 
-# Helper functions
-def select_random_link(links):
-    return random.choice(links)
+# Create a placeholder image
+def create_placeholder_image():
+    img = Image.new('RGB', (512, 512), color = (73, 109, 137))
+    return img
 
 # Inference function
 def infer(prompt, seed, width, height, guidance_scale, num_inference_steps, progress=gr.Progress(track_tqdm=True)):
+    if seed == -1:  # -1 indicates random seed
+        seed = random.randint(0, MAX_SEED)
     generator = torch.Generator(device=device).manual_seed(seed)
     
     progress(0, desc="Generating image")
@@ -51,7 +55,7 @@ def infer(prompt, seed, width, height, guidance_scale, num_inference_steps, prog
     ).images[0]
     
     progress(1, desc="Done")
-    return image
+    return image, seed  # Return both the image and the used seed
 
 # UI setup
 css = """
@@ -68,16 +72,6 @@ examples = [
     "a cat",
     "a cat in the hat",
     "a cat in the cowboy hat",
-]
-
-links = [
-    "https://unsplash.com/photos/4kMEWJHifUc/download?ixid=M3wxMjA3fDB8MXxhbGx8fHx8fHx8fHwxNzI4NzE5OTk4fA&force=true&w=640",
-    "https://unsplash.com/photos/JBkvFAPN7-o/download?ixid=M3wxMjA3fDB8MXxhbGx8fHx8fHx8fHwxNzI4NzIwMDAyfA&force=true&w=640",
-    "https://unsplash.com/photos/a3v1LIBUq8M/download?ixid=M3wxMjA3fDB8MXxhbGx8fHx8fHx8fHwxNzI4NzIwMDExfA&force=true&w=640",
-    "https://unsplash.com/photos/FGjqUPFTTBg/download?ixid=M3wxMjA3fDB8MXxhbGx8fHx8fHx8fHwxNzI4NzIwMDE2fA&force=true&w=640",
-    "https://unsplash.com/photos/ZfUjjOCoJo8/download?ixid=M3wxMjA3fDB8MXxhbGx8fHx8fHx8fHwxNzI4NzIwMDI2fA&force=true&w=640",
-    "https://unsplash.com/photos/zKKw7XjsaAI/download?ixid=M3wxMjA3fDB8MXxhbGx8fHx8fHx8fHwxNzI4NzIwMDI4fA&force=true&w=640",
-    "https://unsplash.com/photos/cwWTZaCozWg/download?ixid=M3wxMjA3fDB8MXxhbGx8fHx8fHx8fHwxNzI4NzIwMDY2fA&force=true&w=640"
 ]
 
 with gr.Blocks(css=css, theme='ParityError/Interstellar') as app:
@@ -104,7 +98,7 @@ with gr.Blocks(css=css, theme='ParityError/Interstellar') as app:
         
         with gr.Group():
             with gr.Accordion("⚙️ Settings", open=False):
-                seed = gr.Slider(label="Seed", minimum=0, maximum=MAX_SEED, step=1, value=0)
+                seed = gr.Slider(label="Seed (-1 for random)", minimum=-1, maximum=MAX_SEED, step=1, value=-1)
                 
                 with gr.Row():
                     width = gr.Slider(label="Width", minimum=256, maximum=MAX_IMAGE_SIZE, step=64, value=1024)
@@ -114,12 +108,14 @@ with gr.Blocks(css=css, theme='ParityError/Interstellar') as app:
                     guidance_scale = gr.Slider(label="Guidance scale", minimum=0.0, maximum=10.0, step=0.1, value=5.0)
                     num_inference_steps = gr.Slider(label="Steps", minimum=1, maximum=50, step=1, value=20)
 
+        seed_used = gr.Number(label="Seed used", interactive=False)
+
         gr.Examples(examples=examples, inputs=[prompt])
     
     run_button.click(
         fn=infer,
         inputs=[prompt, seed, width, height, guidance_scale, num_inference_steps],
-        outputs=result,
+        outputs=[result, seed_used],
         show_progress=True
     )
 
