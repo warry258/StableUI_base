@@ -100,7 +100,7 @@ with gr.Blocks(css=css, theme='ParityError/Interstellar') as app:
                                  placeholder="Enter your prompt", container=False, scale=4)
                 run_button = gr.Button("🚀 Run", scale=1, variant='primary')
         
-        result = gr.Image(label="Result", show_label=False, value=select_random_link(links))
+        result = gr.Image(label="Result", show_label=False)
         
         with gr.Group():
             with gr.Accordion("⚙️ Settings", open=False):
