@@ -14,13 +14,6 @@ MAX_IMAGE_SIZE = 1344
 MODEL_PATH = '/content/StableUI_base/model_link.safetensors'
 LORA_PATH = '/content/StableUI_base/lora_model.safetensors'
 
-# Download model
-def download_model():
-    os.makedirs("/content/StableUI_base", exist_ok=True)
-    subprocess.run([
-        "wget", "-O", MODEL_PATH,
-        "https://civitai.com/api/download/models/128078?type=Model&format=SafeTensor&size=pruned&fp=fp16"
-    ])
 
 # Clear console
 def clear_console():
@@ -30,7 +23,6 @@ def clear_console():
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Load model
-download_model()
 pipe = StableDiffusionXLPipeline.from_single_file(MODEL_PATH, use_safetensors=True, torch_dtype=torch.float16).to(device)
 clear_console()
 print("\033[1;32mModel loaded!\033[0m")
@@ -126,7 +118,7 @@ with gr.Blocks(css=css, theme='ParityError/Interstellar') as app:
                                  placeholder="Enter your prompt", container=False, scale=4)
                 run_button = gr.Button("🚀 Run", scale=1, variant='primary')
         
-        result = gr.Image(label="Result", show_label=False, value=create_placeholder_image())
+        result = gr.Image(label="Result", show_label=False)
         
         with gr.Group():
             with gr.Accordion("⚙️ Settings", open=False):
