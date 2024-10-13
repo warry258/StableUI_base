@@ -14,7 +14,6 @@ MAX_IMAGE_SIZE = 1344
 MODEL_PATH = '/content/StableUI_base/model_link.safetensors'
 LORA_PATH = '/content/StableUI_base/lora_model.safetensors'
 
-
 # Clear console
 def clear_console():
     os.system('clear')
@@ -32,33 +31,27 @@ def create_placeholder_image():
     return Image.new('RGB', (512, 512), color=(73, 109, 137))
 
 # Load and apply LoRA
-def apply_lora(pipe, use_lora, lora_scale):
-    if not use_lora:
-        return "LoRA not applied"
-    
-    lora_state_dict = load_file(LORA_PATH)
-    
-    for key in lora_state_dict:
-        if 'lora_unet' in key:
-            layer_infos = key.split('.')[1:]
-            curr_layer = pipe.unet
-            while len(layer_infos) > 2:
-                curr_layer = getattr(curr_layer, layer_infos.pop(0))
-            parent_name, child_name = layer_infos
+def apply_lora(pipe: StableDiffusionXLPipeline, use_lora: bool, lora_scale: float):
+    if use_lora:
+        lora_path = LORA_PATH
+        
+        if not os.path.exists(lora_path):
+            return "LoRA file not found at the specified path."
+        
+        try:
+            # Load LoRA weights
+            pipe.load_lora_weights(lora_path)
             
-            if hasattr(curr_layer, parent_name):
-                parent = getattr(curr_layer, parent_name)
-                if isinstance(parent, torch.nn.Module):
-                    if 'lora_down' in child_name:
-                        down_weight = lora_state_dict[key]
-                        up_weight = lora_state_dict[key.replace('lora_down', 'lora_up')]
-                        
-                        original = getattr(parent, child_name.split('_')[0])
-                        fused_weight = original + lora_scale * (up_weight @ down_weight)
-                        
-                        setattr(parent, child_name.split('_')[0], torch.nn.Parameter(fused_weight))
-
-    return f"LoRA applied with scale: {lora_scale}"
+            # Set the LoRA scale
+            pipe.set_adapters_scale(lora_scale)
+            
+            return f"Applied LoRA from {lora_path} with scale {lora_scale}"
+        except Exception as e:
+            return f"Error applying LoRA: {str(e)}"
+    else:
+        # Disable LoRA
+        pipe.disable_lora()
+        return "LoRA not applied"
 
 # Inference function
 def infer(prompt, seed, width, height, guidance_scale, num_inference_steps, use_lora, lora_scale, progress=gr.Progress(track_tqdm=True)):
@@ -66,7 +59,7 @@ def infer(prompt, seed, width, height, guidance_scale, num_inference_steps, use_
         seed = random.randint(0, MAX_SEED)
     generator = torch.Generator(device=device).manual_seed(seed)
     
-    lora_message = apply_lora(pipe, use_lora, lora_scale)
+    lora_message = apply_lora(pipe=pipe, use_lora=use_lora, lora_scale=lora_scale)
     
     progress(0, desc="Generating image")
     image = pipe(
@@ -118,7 +111,7 @@ with gr.Blocks(css=css, theme='ParityError/Interstellar') as app:
                                  placeholder="Enter your prompt", container=False, scale=4)
                 run_button = gr.Button("🚀 Run", scale=1, variant='primary')
         
-        result = gr.Image(label="Result", show_label=False)
+        result = gr.Image(label="Result", show_label=False, value=create_placeholder_image())
         
         with gr.Group():
             with gr.Accordion("⚙️ Settings", open=False):
