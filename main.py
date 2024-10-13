@@ -43,14 +43,14 @@ def apply_lora(pipe: StableDiffusionXLPipeline, use_lora: bool, lora_scale: floa
             pipe.load_lora_weights(lora_path)
             
             # Set the LoRA scale
-            pipe.set_adapters_scale(lora_scale)
+            pipe.fuse_lora(lora_scale)
             
             return f"Applied LoRA from {lora_path} with scale {lora_scale}"
         except Exception as e:
             return f"Error applying LoRA: {str(e)}"
     else:
         # Disable LoRA
-        pipe.disable_lora()
+        pipe.unfuse_lora()
         return "LoRA not applied"
 
 # Inference function
@@ -111,7 +111,7 @@ with gr.Blocks(css=css, theme='ParityError/Interstellar') as app:
                                  placeholder="Enter your prompt", container=False, scale=4)
                 run_button = gr.Button("🚀 Run", scale=1, variant='primary')
         
-        result = gr.Image(label="Result", show_label=False, value=create_placeholder_image())
+        result = gr.Image(label="Result", show_label=False)
         
         with gr.Group():
             with gr.Accordion("⚙️ Settings", open=False):
