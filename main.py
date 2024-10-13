@@ -5,6 +5,7 @@ import numpy as np
 import random
 import gradio as gr
 from diffusers import StableDiffusionXLPipeline
+from safetensors.torch import load_file
 from PIL import Image
 
 # Constants
@@ -40,13 +41,32 @@ def create_placeholder_image():
 
 # Load and apply LoRA
 def apply_lora(pipe, use_lora, lora_scale):
-    if use_lora:
-        pipe.load_lora_weights('/content/StableUI_base', weight_name='lora_model.safetensors')
-        pipe.fuse_lora(lora_scale)
-        return f"LoRA applied with scale: {lora_scale}"
-    else:
-        pipe.unfuse_lora()
+    if not use_lora:
         return "LoRA not applied"
+    
+    lora_state_dict = load_file(LORA_PATH)
+    
+    for key in lora_state_dict:
+        if 'lora_unet' in key:
+            layer_infos = key.split('.')[1:]
+            curr_layer = pipe.unet
+            while len(layer_infos) > 2:
+                curr_layer = getattr(curr_layer, layer_infos.pop(0))
+            parent_name, child_name = layer_infos
+            
+            if hasattr(curr_layer, parent_name):
+                parent = getattr(curr_layer, parent_name)
+                if isinstance(parent, torch.nn.Module):
+                    if 'lora_down' in child_name:
+                        down_weight = lora_state_dict[key]
+                        up_weight = lora_state_dict[key.replace('lora_down', 'lora_up')]
+                        
+                        original = getattr(parent, child_name.split('_')[0])
+                        fused_weight = original + lora_scale * (up_weight @ down_weight)
+                        
+                        setattr(parent, child_name.split('_')[0], torch.nn.Parameter(fused_weight))
+
+    return f"LoRA applied with scale: {lora_scale}"
 
 # Inference function
 def infer(prompt, seed, width, height, guidance_scale, num_inference_steps, use_lora, lora_scale, progress=gr.Progress(track_tqdm=True)):
